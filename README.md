@@ -132,18 +132,37 @@ Access Protected Routes
 
 | Method | Endpoint             | Description           |
 | ------ | -------------------- | --------------------- |
-| POST   | `/api/auth/register` | Register a user       |
-| POST   | `/api/auth/login`    | Login and receive JWT |
+| POST   | `/api/auth/register` | Create a buyer account |
+| POST   | `/api/auth/login`    | Login and receive JWT plus role |
+| POST   | `/api/admin/sellers` | Admin creates a seller account |
 
 ### Products
 
 | Method | Endpoint            | Authentication |
 | ------ | ------------------- | -------------- |
-| GET    | `/api/products`     | Required       |
-| GET    | `/api/products/:id` | Required       |
-| POST   | `/api/products`     | Required       |
-| PUT    | `/api/products/:id` | Required       |
-| DELETE | `/api/products/:id` | Required       |
+| GET    | `/api/products`     | Public         |
+| GET    | `/api/products/:id` | Public         |
+| GET    | `/api/seller/products` | Seller         |
+| POST   | `/api/products`     | Seller or admin |
+| PUT    | `/api/products/:id` | Owner seller or admin |
+| DELETE | `/api/products/:id` | Owner seller or admin |
+
+### Admin Dashboard
+
+Open `/admin` in the frontend and sign in with the admin account. The dashboard shows product, user, seller, and order counts, paid revenue, recent orders, tools to add/edit/delete products, and a form to create seller accounts.
+
+Buyers use `/shop`, `/login`, and `/signup`. Public signup always creates a buyer. Sellers sign in at `/login` and are sent to `/seller`, where they only see and manage their own products. Admins create seller accounts from the admin dashboard. Existing database records with the old `user` role are changed to `buyer` at backend startup.
+
+For a local setup, copy `.env.admin.example` to `.env.admin` and set a unique email and password of at least 12 characters. Keep `.env.admin` private; it is ignored by Git. When the server connects to MongoDB, it creates the admin account if that email is not already registered. If the email belongs to a regular account, choose a different email rather than changing that account's role.
+
+Adding a product requires the Cloudinary variables in `.env` because product images are uploaded there. Admin dashboard and seller account creation require an admin account. Seller product changes are restricted to the seller who owns the product.
+
+The dashboard data endpoint is:
+
+```http
+GET /api/admin/dashboard
+Authorization: Bearer <ADMIN_JWT>
+```
 
 ## Environment Variables
 

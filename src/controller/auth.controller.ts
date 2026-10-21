@@ -1,3 +1,4 @@
+
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
@@ -8,7 +9,7 @@ import {
   sendWelcomeEmail,
 } from "../services/emailService";
 
-const hashCode = (code: string) =>
+const hashCode = (code: string): string =>
   crypto.createHash("sha256").update(code).digest("hex");
 
 // =========================
@@ -38,11 +39,12 @@ export const register = async (req: Request, res: Response) => {
       name,
       email,
       password: hashedPassword,
+      role: "buyer",
     });
 
-    // Send welcome email
+    // Send welcome email; registration still succeeds if email fails.
     try {
-      await sendWelcomeEmail(email, name);
+      await sendWelcomeEmail(user.email, user.name);
     } catch (error) {
       console.error("Failed to send welcome email:", error);
     }
@@ -53,6 +55,7 @@ export const register = async (req: Request, res: Response) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -87,7 +90,7 @@ export const login = async (req: Request, res: Response) => {
 
     const isPasswordCorrect = await bcrypt.compare(
       password,
-      user.password
+      user.password,
     );
 
     if (!isPasswordCorrect) {
@@ -97,13 +100,9 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      {
-        userId: user._id,
-      },
+      { userId: user._id },
       process.env.JWT_SECRET as string,
-      {
-        expiresIn: "1d",
-      }
+      { expiresIn: "1d" },
     );
 
     return res.status(200).json({
@@ -113,6 +112,7 @@ export const login = async (req: Request, res: Response) => {
         id: user._id,
         name: user.name,
         email: user.email,
+        role: user.role,
       },
     });
   } catch (error) {
@@ -128,15 +128,67 @@ export const login = async (req: Request, res: Response) => {
 // PROFILE
 // =========================
 export const profile = async (req: Request, res: Response) => {
-  return res.json({
-    user: req.user,
+  const userId = (req as any).user.userId;
+  const user = await User.findById(userId).select("name email role");
+
+  if (!user) {
+    return res.status(404).json({ message: "User not found" });
+  }
+
+  return res.status(200).json({
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    },
   });
+};
+
+export const updateProfile = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user.userId;
+    const { name, email } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ message: "Name and email are required" });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      userId,
+      { name, email },
+      { new: true, runValidators: true, select: "name email role" },
+    );
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    return res.status(200).json({
+      message: "Profile updated successfully",
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error && error.code === 11000) {
+      return res.status(409).json({ message: "Email is already in use" });
+    }
+
+    return res.status(500).json({ message: "Failed to update profile" });
+  }
 };
 
 // =========================
 // FORGOT PASSWORD
 // =========================
-export const forgotPassword = async (req: Request, res: Response) => {
+export const forgotPassword = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { email } = req.body;
 
@@ -146,49 +198,34 @@ export const forgotPassword = async (req: Request, res: Response) => {
       });
     }
 
+    // Use the same response whether or not the account exists.
     const message =
-      "If that email is registered, a reset code has been generated";
+      "If that email is registered, a reset code has been sent";
 
     const user = await User.findOne({ email });
 
-    // Do not reveal whether the email exists
     if (!user) {
-      return res.json({ message });
+      return res.status(200).json({ message });
     }
 
-    // Generate 6-digit reset code
-    const code = crypto
-      .randomInt(100000, 1000000)
-      .toString();
+    // Generate a six-digit code.
+    const code = crypto.randomInt(100000, 1000000).toString();
 
-    // TEMPORARY: show code in terminal for testing
-    console.log("=================================");
-    console.log("RESET CODE:", code);
-    console.log("EMAIL:", email);
-    console.log("=================================");
-
-    // Save hashed reset code
+    // Store only the hash and expire it after 10 minutes.
     user.resetCode = hashCode(code);
-
-    // Code expires after 10 minutes
     user.resetCodeExpiration = new Date(
-      Date.now() + 10 * 60 * 1000
+      Date.now() + 10 * 60 * 1000,
     );
 
     await user.save();
 
-    // Send reset code email
     try {
-      await sendResetCodeEmail(email, code);
+      await sendResetCodeEmail(user.email, code);
     } catch (error) {
       console.error("Failed to send reset email:", error);
-
-      // TEMPORARY:
-      // Keep the reset code so we can test password reset
-      // even while Gmail authentication is being fixed.
     }
 
-    return res.json({ message });
+    return res.status(200).json({ message });
   } catch (error) {
     console.error("Forgot password error:", error);
 
@@ -201,7 +238,10 @@ export const forgotPassword = async (req: Request, res: Response) => {
 // =========================
 // RESET PASSWORD
 // =========================
-export const resetPassword = async (req: Request, res: Response) => {
+export const resetPassword = async (
+  req: Request,
+  res: Response,
+) => {
   try {
     const { email, code, newPassword } = req.body;
 
@@ -211,12 +251,16 @@ export const resetPassword = async (req: Request, res: Response) => {
       });
     }
 
+    if (typeof newPassword !== "string" || newPassword.length < 8) {
+      return res.status(400).json({
+        message: "New password must be at least 8 characters long",
+      });
+    }
+
     const user = await User.findOne({
       email,
       resetCode: hashCode(String(code)),
-      resetCodeExpiration: {
-        $gt: new Date(),
-      },
+      resetCodeExpiration: { $gt: new Date() },
     });
 
     if (!user) {
@@ -225,16 +269,13 @@ export const resetPassword = async (req: Request, res: Response) => {
       });
     }
 
-    // Hash the new password
     user.password = await bcrypt.hash(newPassword, 10);
-
-    // Remove reset code after successful reset
     user.resetCode = undefined;
     user.resetCodeExpiration = undefined;
 
     await user.save();
 
-    return res.json({
+    return res.status(200).json({
       message: "Password reset successful, you can now log in",
     });
   } catch (error) {

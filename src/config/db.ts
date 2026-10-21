@@ -1,8 +1,18 @@
+
 import mongoose from "mongoose";
+import dns from "node:dns";
+
+dns.setServers(["8.8.8.8", "8.8.4.4"]);
 
 export const connectDB = async () => {
   try {
-    await mongoose.connect(process.env.MONGO_URI as string);
+    const mongoURI = process.env.MONGO_URI;
+
+    if (!mongoURI) {
+      throw new Error("MONGO_URI is missing from environment variables");
+    }
+
+    await mongoose.connect(mongoURI);
 
     console.log("MongoDB connected successfully");
   } catch (error) {

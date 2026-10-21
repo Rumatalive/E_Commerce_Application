@@ -1,18 +1,18 @@
 import { Router } from "express";
 import { authenticate } from "../middleware/auth.middleware";
+import { requireSeller, requireSellerOrAdmin } from "../middleware/admin.middleware";
 import { upload } from "../middleware/uploadMiddleware";
 
 import {
   getProduct,
   getProductById,
+  getSellerProducts,
   newProduct,
   updateProduct,
   deleteProduct,
 } from "../controller/product.controller";
 
 const productRouter = Router();
-
-productRouter.use(authenticate);
 
 /**
  * @swagger
@@ -70,6 +70,7 @@ productRouter.get("/products", getProduct);
  *         description: Product not found
  */
 productRouter.get("/products/:id", getProductById);
+productRouter.get("/seller/products", authenticate, requireSeller, getSellerProducts);
 
 /**
  * @swagger
@@ -89,7 +90,7 @@ productRouter.get("/products/:id", getProductById);
  *       400:
  *         description: Required fields are missing
  */
-productRouter.post("/products", upload.single("image"), newProduct);
+productRouter.post("/products", authenticate, requireSeller, upload.single("image"), newProduct);
 
 /**
  * @swagger
@@ -115,7 +116,7 @@ productRouter.post("/products", upload.single("image"), newProduct);
  *       404:
  *         description: Product not found
  */
-productRouter.put("/products/:id", updateProduct);
+productRouter.put("/products/:id", authenticate, requireSellerOrAdmin, updateProduct);
 
 /**
  * @swagger
@@ -135,6 +136,6 @@ productRouter.put("/products/:id", updateProduct);
  *       404:
  *         description: Product not found
  */
-productRouter.delete("/products/:id", deleteProduct);
+productRouter.delete("/products/:id", authenticate, requireSellerOrAdmin, deleteProduct);
 
 export default productRouter;

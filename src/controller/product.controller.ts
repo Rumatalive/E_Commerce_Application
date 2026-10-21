@@ -52,6 +52,16 @@ export const getProductById = async (req: Request, res: Response) => {
   }
 };
 
+export const getSellerProducts = async (req: Request, res: Response) => {
+  try {
+    const sellerId = (req as any).user.userId;
+    const products = await Product.find({ seller: sellerId }).sort({ createdAt: -1 });
+    return res.status(200).json(products);
+  } catch {
+    return res.status(500).json({ message: "Could not load your products" });
+  }
+};
+
 // Create a new product
 export const newProduct = async (req: Request, res: Response) => {
   try {
@@ -77,6 +87,7 @@ export const newProduct = async (req: Request, res: Response) => {
       price,
       imageUrl: uploadResult.secure_url,
       imagePublicId: uploadResult.public_id,
+      ...((req as any).currentRole === "seller" ? { seller: (req as any).user.userId } : {}),
     });
 
     return res.status(201).json({
@@ -96,9 +107,18 @@ export const newProduct = async (req: Request, res: Response) => {
 // Update a product
 export const updateProduct = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findByIdAndUpdate(
-      req.params.id,
-      req.body,
+    const isSeller = (req as any).currentRole === "seller";
+    const sellerId = (req as any).user.userId;
+    const update: Record<string, unknown> = {};
+    for (const field of ["name", "category", "price"] as const) {
+      if (req.body[field] !== undefined) {
+        update[field] = req.body[field];
+      }
+    }
+
+    const product = await Product.findOneAndUpdate(
+      { _id: req.params.id, ...(isSeller ? { seller: sellerId } : {}) },
+      { $set: update },
       {
         new: true,
         runValidators: true,
@@ -125,7 +145,12 @@ export const updateProduct = async (req: Request, res: Response) => {
 // Delete a product
 export const deleteProduct = async (req: Request, res: Response) => {
   try {
-    const product = await Product.findByIdAndDelete(req.params.id);
+    const isSeller = (req as any).currentRole === "seller";
+    const sellerId = (req as any).user.userId;
+    const product = await Product.findOneAndDelete({
+      _id: req.params.id,
+      ...(isSeller ? { seller: sellerId } : {}),
+    });
 
     if (!product) {
       return res.status(404).json({

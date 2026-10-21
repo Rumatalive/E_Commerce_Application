@@ -4,10 +4,12 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  role: "user" | "admin";
+  role: UserRole;
   resetCode?: string;
   resetCodeExpiration?: Date;
 }
+
+export type UserRole = "buyer" | "seller" | "admin";
 
 const userSchema = new Schema<IUser>(
   {
@@ -31,8 +33,8 @@ const userSchema = new Schema<IUser>(
     },
     role: {
       type: String,
-      enum: ["user", "admin"],
-      default: "user"
+      enum: ["buyer", "seller", "admin"],
+      default: "buyer"
     },
     resetCode: {
       type: String,
